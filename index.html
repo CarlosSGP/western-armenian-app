@@ -779,6 +779,7 @@ async function ghApi(method, body) {
 async function ghPull() {
   const r = await ghApi('GET');
   if (r.status === 404) return null;
+  if (r.status === 401) throw new Error('GitHub rejected the token. It may be mistyped or expired.');
   if (!r.ok) throw new Error('GitHub answered ' + r.status);
   const j = await r.json();
   return { sha: j.sha, data: JSON.parse(b64d(j.content)) };
@@ -792,7 +793,9 @@ async function ghSync() {
       S.t = t; ghMsg = 'Loaded newer progress from GitHub at ' + new Date().toLocaleTimeString();
     } else if (!cur || (S.t || 0) > (cur.data.t || 0)) {
       const r = await ghApi('PUT', { message: 'Update Parev progress', content: b64e(JSON.stringify(S, null, 1)), sha: cur ? cur.sha : undefined });
-      if (!r.ok) throw new Error('GitHub answered ' + r.status);
+      if (!r.ok) throw new Error(r.status === 404 ? 'GitHub cannot find "' + GH().repo + '" with this token. Check the name is exactly username/repository, and that the token\'s "Repository access" includes that repository.'
+        : r.status === 403 ? 'the token can see the repository but may not write to it. Set its Contents permission to "Read and write".'
+        : r.status === 401 ? 'GitHub rejected the token. It may be mistyped or expired.' : 'GitHub answered ' + r.status);
       ghMsg = 'Saved to GitHub at ' + new Date().toLocaleTimeString();
     } else ghMsg = 'Already up to date';
   } catch (e) { ghMsg = 'Sync failed: ' + e.message; }
@@ -1195,7 +1198,7 @@ function ghRow() {
   const tok = h('input', { class: 'gh', type: 'password', placeholder: 'access token', value: g.token || '' });
   const msg = h('small', {}, ghMsg || (g.repo ? 'Connected to ' + g.repo : 'Not connected'));
   const go = async () => {
-    if (repo.value.trim() && tok.value.trim()) localStorage.setItem('parev.gh', JSON.stringify({ repo: repo.value.trim(), token: tok.value.trim() }));
+    if (repo.value.trim() && tok.value.trim()) { repo.value = repo.value.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/^\/+|\/+$/g, ''); localStorage.setItem('parev.gh', JSON.stringify({ repo: repo.value, token: tok.value.trim() })); }
     else { localStorage.removeItem('parev.gh'); msg.textContent = 'Not connected'; return; }
     msg.textContent = 'Syncing…'; await ghSync(); msg.textContent = ghMsg;
   };
