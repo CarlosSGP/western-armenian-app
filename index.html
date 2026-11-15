@@ -37,7 +37,8 @@ nav button .n{background:var(--acc);color:#fff;border-radius:10px;padding:1px 7p
 .btn:disabled{opacity:.35;cursor:not-allowed}
 .btn.small{padding:6px 12px;font-size:14px}
 .extop{display:flex;align-items:center;gap:14px;padding:22px 0}
-.x{border:0;background:none;font-size:20px;color:var(--mute)}
+.x{border:0;background:none;font-size:14px;font-weight:600;color:var(--mute);white-space:nowrap;padding:6px 4px}
+.x:disabled{opacity:.3;cursor:default}
 .bar{flex:1;height:10px;background:var(--line);border-radius:5px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--acc2);transition:width .3s}
 .ex{min-height:340px;padding-top:8px}
@@ -915,7 +916,7 @@ function matchOf(pairs) { const seen = new Set(), out = []; for (const p of pair
 
 function buildLesson(l) {
   const q = [];
-  if (l.tip) q.push({ t: 'tip', title: l.title, html: l.tip });
+  if (l.tip) q.push({ t: 'tip', title: l.title, html: l.tip, alpha: !!l.letters });
   if (l.letters) {
     for (let c = 0; c < l.letters.length; c += 3) {
       const ch = l.letters.slice(c, c + 3);
@@ -957,14 +958,29 @@ function revEx(k) {
 
 // ---------- session ----------
 let sess = null;
-function startSession(q, meta) { sess = { q, i: 0, total: q.length, done: 0, att: 0, ok: 0, wrong: new Set(), graded: new Set(), meta }; renderEx(); }
+function startSession(q, meta) { sess = { q, i: 0, total: q.length, done: 0, att: 0, ok: 0, wrong: new Set(), graded: new Set(), meta }; keep(); renderEx(); }
+// The lesson in progress is stored with the rest of the progress after every step, so leaving never loses it.
+function keep() {
+  if (sess) S.sess = { q: sess.q, i: sess.i, total: sess.total, done: sess.done, att: sess.att, ok: sess.ok, wrong: [...sess.wrong], graded: [...sess.graded], lesson: sess.meta.lesson ? sess.meta.lesson.id : null };
+  save();
+}
+function resume() {
+  const p = S.sess, l = p && p.lesson ? LESSONS.find(x => x.id === p.lesson) : null;
+  if (!p || !Array.isArray(p.q) || !p.q.length || (p.lesson && !l)) { delete S.sess; return false; }
+  POOL = ALLW;
+  sess = { q: p.q, i: Math.max(0, Math.min(p.i, p.q.length - 1)), total: p.total, done: p.done, att: p.att, ok: p.ok, wrong: new Set(p.wrong), graded: new Set(p.graded), meta: l ? { lesson: l } : { review: true } };
+  renderEx(); return true;
+}
+function leave() { keep(); ghSync(); sess = null; home(); }
 function startLesson(l) {
+  if (S.sess && S.sess.lesson === l.id && resume()) return;
   const idx = LESSONS.indexOf(l);
   const known = LESSONS.slice(0, idx + 1).flatMap(x => x.words || []);
   POOL = known.length > 6 ? known : ALLW;
   startSession(buildLesson(l), { lesson: l });
 }
 function startReview(force) {
+  if (S.sess && !S.sess.lesson && resume()) return;
   let keys = shuffle(dueKeys()).slice(0, 15);
   if (!keys.length && force) keys = shuffle(Object.keys(S.srs).filter(valid)).slice(0, 12);
   if (!keys.length) return;
@@ -983,10 +999,13 @@ function record(ex, ok) {
 function next(ex, ok) {
   if (ok) sess.done++; else sess.q.push(ex);
   sess.i++;
-  if (sess.i >= sess.q.length) complete(); else renderEx();
+  if (sess.i >= sess.q.length) return complete();
+  keep(); if (sess.i % 8 === 0) ghSync();
+  renderEx();
 }
 function complete() {
   const l = sess.meta.lesson;
+  delete S.sess;
   if (l) {
     S.done[l.id] = 1;
     keysOf(l).forEach(k => { if (sess.wrong.has(k)) S.srs[k] = { b: 0, due: Date.now() }; else if (!S.srs[k]) S.srs[k] = { b: 1, due: Date.now() + 864e5 }; });
@@ -1018,8 +1037,9 @@ function renderEx() {
   const go = h('button', { class: 'btn primary', id: 'go' }, 'Check');
   const extra = h('span');
   app.append(
-    h('div', { class: 'extop' }, h('button', { class: 'x', title: 'Quit', onclick: () => { if (confirm('Leave this session? Its progress will not be saved.')) { sess = null; home(); } } }, '✕'),
-      h('div', { class: 'bar' }, h('i', { style: `width:${100 * sess.done / sess.total}%` }))),
+    h('div', { class: 'extop' }, h('button', { class: 'x', title: 'Your place is saved', onclick: leave }, '✕ Lessons'),
+      h('div', { class: 'bar' }, h('i', { style: `width:${100 * sess.i / sess.q.length}%` })),
+      h('button', { class: 'x', disabled: sess.i === 0, onclick: () => { sess.i--; keep(); renderEx(); } }, '← Back')),
     body, h('div', { class: 'foot' }, h('div', {}, fb, extra, go)));
   const done = ok => {
     if (answered) return; answered = true; record(ex, ok);
@@ -1032,7 +1052,7 @@ function renderEx() {
   const passive = () => { go.textContent = 'Continue'; go.onclick = () => next(ex, true); };
 
   if (ex.t === 'tip') {
-    body.append(h('p', { class: 'q' }, 'Before you start'), h('h1', { style: 'margin-top:0' }, ex.title), h('div', { class: 'tip', html: ex.html }));
+    body.append(h('p', { class: 'q' }, 'Before you start'), h('h1', { style: 'margin-top:0' }, ex.title), h('div', { class: 'tip', html: ex.html }), ex.alpha ? alphaPlayer() : null);
     passive();
   } else if (ex.t === 'lintro') {
     const L = ALPHABET[ex.Li];
@@ -1166,6 +1186,13 @@ function home() {
     h('div', {}, h('b', {}, streak()), 'day streak'), h('div', {}, h('b', {}, `${nDone}/${LESSONS.length}`), 'lessons'),
     h('div', {}, h('b', {}, Object.keys(S.srs).filter(valid).length), 'items learned'), h('div', {}, h('b', {}, dueKeys().length), 'due for review')));
   if (GH()) app.append(h('p', { class: 'note', style: 'margin:0' }, ghMsg || 'Connected to your GitHub repository.'));
+  if (S.sess && S.sess.q) {
+    const l = S.sess.lesson ? LESSONS.find(x => x.id === S.sess.lesson) : null;
+    app.append(h('div', { class: 'card', style: 'margin-top:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap' },
+      h('div', { style: 'margin-right:auto' }, h('b', {}, l ? `Unfinished lesson: ${l.title}` : 'Unfinished review'), h('div', { class: 'note' }, `Saved at step ${S.sess.i + 1} of ${S.sess.q.length}`)),
+      h('button', { class: 'btn small', onclick: () => { delete S.sess; save(); ghSync(); home(); } }, 'Discard'),
+      h('button', { class: 'btn primary small', id: 'go', onclick: () => { if (!resume()) home(); } }, 'Continue')));
+  }
   let firstOpen = true;
   UNITS.forEach((u, ui) => {
     const cards = u.lessons.map(l => {
@@ -1187,6 +1214,15 @@ function review() {
       : h('p', { class: 'note' }, any ? 'Nothing is due right now.' : 'Finish your first lesson and items will start appearing here.'),
     !due && any ? h('p', {}, h('button', { class: 'btn', onclick: () => startReview(true) }, 'Practise anyway')) : null);
 }
+function alphaPlayer() {
+  const src = 'https://commons.wikimedia.org/wiki/Special:FilePath/Armenian_alphabet_(Western_Armenian).ogg';
+  const a = h('audio', { controls: true, preload: 'none', src, style: 'width:100%;margin-top:10px' });
+  const rate = (r, label) => h('button', { class: 'btn small', onclick: () => { a.playbackRate = r; a.play(); } }, label);
+  return h('div', { class: 'card', style: 'margin:16px 0;padding:18px 22px' }, h('b', {}, 'Hear the alphabet'),
+    h('div', { class: 'note' }, 'A native speaker reads the letters in alphabet order with Western pronunciation (43 seconds). Follow along from Ա to Ֆ.'), a,
+    h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap' }, rate(1, 'Normal speed'), rate(0.6, 'Slow'),
+      h('span', { class: 'note' }, 'Recording by Vahagn Petrosyan, ', h('a', { href: 'https://commons.wikimedia.org/wiki/File:Armenian_alphabet_(Western_Armenian).ogg', target: '_blank', rel: 'noopener' }, 'Wikimedia Commons'), '. If it will not play here, open that link.')));
+}
 function abc() {
   const app = $('#app'); app.innerHTML = '';
   const detail = h('div', { class: 'card' }, h('p', { class: 'note' }, 'Choose a letter.'));
@@ -1200,7 +1236,7 @@ function abc() {
   app.append(topBar('abc'), h('h1', {}, 'The alphabet'),
     h('div', { class: 'grid' }, ALPHABET.slice(0, 38).map(cell)), h('h3', {}, 'Letter pairs'),
     h('div', { class: 'grid' }, ALPHABET.slice(38).map((L, i) => cell(L, i + 38))), detail,
-    h('p', { class: 'note' }, 'To hear every letter said by a native speaker, play ', h('a', { href: 'https://commons.wikimedia.org/wiki/File:Armenian_alphabet_(Western_Armenian).ogg', target: '_blank', rel: 'noopener' }, 'this 43-second recording on Wikimedia Commons'), ' (Western pronunciation, in alphabet order).'),
+    alphaPlayer(),
     h('h3', {}, 'Western versus Eastern sounds'),
     h('div', { class: 'tip', html: `<p>If you compare with Eastern Armenian material, these letters will look "swapped". In Western Armenian:</p><table><tr><td>բ = p</td><td>պ = b</td><td>փ = p</td></tr><tr><td>գ = k</td><td>կ = g</td><td>ք = k</td></tr><tr><td>դ = t</td><td>տ = d</td><td>թ = t</td></tr><tr><td>ձ = ts</td><td>ծ = dz</td><td>ց = ts</td></tr><tr><td>ջ = ch</td><td>ճ = j</td><td>չ = ch</td></tr></table><p>Western Armenian also keeps the traditional spelling (<span class="hy">իւ, եա, ոյ, աւ</span>, silent final <span class="hy">յ</span>), which Armenia replaced in the 1920s.</p>` }));
 }
