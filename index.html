@@ -726,6 +726,8 @@ L("Everyday expressions", `
 UNITS.forEach((u, ui) => u.lessons.forEach((l, li) => { l.id = `u${ui + 1}l${li + 1}`; }));
 if (typeof module !== "undefined") module.exports = { ALPHABET, UNITS };
 // ---------- helpers ----------
+// Skip empty pieces when adding to the page; the browser would otherwise print them as the word "null".
+{ const add = Element.prototype.append; Element.prototype.append = function (...kids) { return add.apply(this, kids.flat().filter(c => c != null && c !== false)); }; }
 const $ = (s, e = document) => e.querySelector(s);
 const h = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);

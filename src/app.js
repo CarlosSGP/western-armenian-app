@@ -1,4 +1,6 @@
 // ---------- helpers ----------
+// Skip empty pieces when adding to the page; the browser would otherwise print them as the word "null".
+{ const add = Element.prototype.append; Element.prototype.append = function (...kids) { return add.apply(this, kids.flat().filter(c => c != null && c !== false)); }; }
 const $ = (s, e = document) => e.querySelector(s);
 const h = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
