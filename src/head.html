@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parev · Western Armenian</title>
+<style>
+:root{--bg:#f4ecdf;--card:#fffaf1;--ink:#2a2019;--mute:#7d6d5c;--line:#e0d2bc;--acc:#a3233b;--acc2:#d9792b;--ok:#2f7d55;--okbg:#e1f1e6;--no:#b3261e;--nobg:#fbe4e0;--hy:"Noto Sans Armenian","Mshtakan","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+button{font:inherit;color:inherit;cursor:pointer}
+.hy{font-family:var(--hy)}
+#app{max-width:820px;margin:0 auto;padding:0 20px 120px}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:22px 0 14px;border-bottom:2px solid var(--ink)}
+.brand{font-family:var(--hy);font-size:26px;font-weight:700;color:var(--acc);margin-right:auto;line-height:1}
+.brand small{display:block;font:500 12px system-ui;color:var(--mute);letter-spacing:.12em;text-transform:uppercase;margin-top:6px}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:0;padding:8px 12px;border-radius:8px;font-weight:600;color:var(--mute)}
+nav button.on{background:var(--ink);color:var(--bg)}
+nav button .n{background:var(--acc);color:#fff;border-radius:10px;padding:1px 7px;font-size:12px;margin-left:6px}
+.stats{display:flex;gap:28px;padding:18px 0;color:var(--mute);font-size:14px}
+.stats b{display:block;font-size:24px;color:var(--ink);line-height:1.1}
+.unit{margin-top:26px}
+.unit h2{margin:0;font-size:20px}
+.unit p{margin:2px 0 12px;color:var(--mute);font-size:14px}
+.unit .k{color:var(--acc2);font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase}
+.lessons{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.lesson{text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center}
+.lesson:hover:not(:disabled){border-color:var(--acc)}
+.lesson:disabled{opacity:.45;cursor:not-allowed}
+.lesson .dot{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:13px;font-weight:700;flex:none}
+.lesson.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+.lesson.next .dot{border-color:var(--acc);color:var(--acc)}
+.lesson span{font-weight:600;font-size:15px;line-height:1.25}
+.btn{border:1.5px solid var(--ink);background:none;border-radius:10px;padding:11px 22px;font-weight:700}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn.small{padding:6px 12px;font-size:14px}
+.extop{display:flex;align-items:center;gap:14px;padding:22px 0}
+.x{border:0;background:none;font-size:20px;color:var(--mute)}
+.bar{flex:1;height:10px;background:var(--line);border-radius:5px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc2);transition:width .3s}
+.ex{min-height:340px;padding-top:8px}
+.q{font-size:14px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin:0 0 16px}
+.big{font-family:var(--hy);font-size:44px;line-height:1.25;margin:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.big.xl{font-size:96px;color:var(--acc)}
+.tr{color:var(--mute);font-style:italic}
+.text{font-size:26px;font-weight:600;margin:0}
+.spk{border:1.5px solid var(--line);background:var(--card);border-radius:50%;width:40px;height:40px;font-size:17px;flex:none}
+.opts{display:grid;gap:10px;margin-top:24px}
+.opt{text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;display:flex;gap:12px;align-items:baseline}
+.opt .num{color:var(--mute);font-size:12px;font-weight:700}
+.opt.hy b{font-family:var(--hy);font-size:24px;font-weight:500}
+.opt small{color:var(--mute)}
+.opt.sel{border-color:var(--acc);background:#fbeef0}
+.opt.right{border-color:var(--ok);background:var(--okbg)}
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:28px}
+.card .en{font-size:22px;font-weight:600;margin:10px 0 0}
+.tip{background:var(--card);border-left:4px solid var(--acc2);border-radius:0 12px 12px 0;padding:6px 22px}
+.tip table{border-collapse:collapse;margin:8px 0}
+.tip td{padding:3px 16px 3px 0;font-family:var(--hy)}
+.tip .hy{font-size:1.1em}
+.ansrow{min-height:64px;border-bottom:2px solid var(--line);padding:8px 0;margin:22px 0 18px;display:flex;flex-wrap:wrap;gap:8px}
+.bank{display:flex;flex-wrap:wrap;gap:8px}
+.tile{background:var(--card);border:1.5px solid var(--line);border-bottom-width:3px;border-radius:10px;padding:8px 14px;font-size:17px}
+.tile.hy{font-family:var(--hy);font-size:21px}
+.tile.used{visibility:hidden}
+.match{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-top:20px}
+.match button{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:17px}
+.match .hy{font-size:22px}
+.match .sel{border-color:var(--acc);background:#fbeef0}
+.match .gone{opacity:.3;border-color:var(--ok);pointer-events:none}
+.match .bad{border-color:var(--no);background:var(--nobg)}
+.inp{width:100%;font-family:var(--hy);font-size:28px;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);margin:20px 0 12px}
+.kb{display:grid;grid-template-columns:repeat(10,1fr);gap:5px}
+.kb button{font-family:var(--hy);font-size:20px;padding:7px 0;background:var(--card);border:1.5px solid var(--line);border-radius:8px}
+.kb .wide{grid-column:span 3;font:600 14px system-ui}
+canvas.trace{width:100%;max-width:560px;aspect-ratio:560/300;background:var(--card);border:1.5px dashed var(--line);border-radius:16px;touch-action:none;display:block;margin:14px 0}
+.foot{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1.5px solid var(--line)}
+.foot>div{max-width:820px;margin:0 auto;padding:14px 20px;display:flex;gap:14px;align-items:center;justify-content:flex-end}
+.fb{margin-right:auto;font-size:15px}
+.fb b{display:block;font-size:17px}
+.fb.ok b{color:var(--ok)}.fb.no b{color:var(--no)}
+.fb .hy{font-size:19px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px;margin:16px 0}
+.grid button{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:8px 4px;font-family:var(--hy);font-size:24px}
+.grid button small{display:block;font:600 12px system-ui;color:var(--mute)}
+.grid button.on{border-color:var(--acc)}
+h1{font-size:26px;margin:26px 0 6px}
+h3{margin:26px 0 8px}
+.row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--line)}
+.row small{display:block;color:var(--mute)}
+.center{text-align:center;padding:60px 0}
+.center .big{justify-content:center}
+.gh{font:inherit;padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);min-width:200px}
+.note{color:var(--mute);font-size:14px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
