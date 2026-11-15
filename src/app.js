@@ -179,6 +179,10 @@ function mcL(i, dir) {
     ? { t: 'mc', key: 'L:' + i, Li: i, q: 'What sound does this make?', big: glyph(L), opts: opts.map(j => ({ label: ALPHABET[j][3], sub: ALPHABET[j][4] })), ans: opts.indexOf(i) }
     : { t: 'mc', key: 'L:' + i, Li: i, q: 'Which one makes this sound?', text: `“${L[3]}” — ${L[4]}` + (L[2] ? ` (the letter “${L[2]}”)` : ''), opts: opts.map(j => ({ label: glyph(ALPHABET[j]), hy: true })), ans: opts.indexOf(i) };
 }
+function mcLhear(i) {
+  const L = ALPHABET[i], opts = shuffle([i, ...letterDistract(i)]);
+  return { t: 'mc', key: 'L:' + i, Li: i, q: 'Listen. Which letter is it?', hear: L[1], opts: opts.map(j => ({ label: glyph(ALPHABET[j]), hy: true })), ans: opts.indexOf(i) };
+}
 function mcRead(i) {
   const L = ALPHABET[i], seen = new Set([L[6]]), ds = [];
   for (const j of shuffle(ALPHABET.map((_, j) => j))) { if (seen.has(ALPHABET[j][6])) continue; seen.add(ALPHABET[j][6]); ds.push(ALPHABET[j][6]); if (ds.length === 3) break; }
@@ -196,6 +200,7 @@ function buildLesson(l) {
       ch.forEach(i => q.push({ t: 'lintro', Li: i }, { t: 'trace', Li: i }));
       shuffle(ch.slice()).forEach(i => q.push(mcL(i, 'ls')));
       shuffle(ch.slice()).forEach(i => q.push(mcL(i, 'sl')));
+      shuffle(ch.filter(i => hasClip(ALPHABET[i][1]))).forEach(i => q.push(mcLhear(i)));
     }
     const m = []; l.letters.forEach(i => { if (!m.some(j => stoks(ALPHABET[j][3]).some(t => stoks(ALPHABET[i][3]).includes(t)))) m.push(i); });
     q.push(matchOf(m.slice(0, 5).map(i => [glyph(ALPHABET[i]), ALPHABET[i][3]])));
@@ -222,7 +227,7 @@ function buildLesson(l) {
   return q.filter(Boolean);
 }
 function revEx(k) {
-  if (k.startsWith('L:')) return mcL(+k.slice(2), Math.random() < .5 ? 'ls' : 'sl');
+  if (k.startsWith('L:')) { const i = +k.slice(2); return hasClip(ALPHABET[i][1]) && Math.random() < .34 ? mcLhear(i) : mcL(i, Math.random() < .5 ? 'ls' : 'sl'); }
   const it = ITEMS[k], r = Math.random();
   if (canHear(k) && Math.random() < .25) return it.kind === 'w' && Math.random() < .5 ? { t: 'type', key: k, item: it, hear: true } : mcListen(it);
   if (it.kind === 'w') return r < .35 ? mcW(it, 'he') : r < .65 ? mcW(it, 'eh') : r < .9 ? { t: 'type', key: k, item: it } : { t: 'speak', key: k, item: it };
@@ -330,9 +335,10 @@ function renderEx() {
   } else if (ex.t === 'lintro') {
     const L = ALPHABET[ex.Li];
     body.append(h('p', { class: 'q' }, L[2] ? 'New letter' : 'New letter pair'),
-      h('div', { class: 'card' }, h('p', { class: 'big xl' }, glyph(L), spk(L[1])),
+      h('div', { class: 'card' }, h('p', { class: 'big xl' }, glyph(L), hasClip(L[1]) ? spk(L[1]) : null),
         h('p', { class: 'en' }, (L[2] ? `“${L[2]}” — ` : '') + `sounds like ${L[3]}`), h('p', { class: 'note' }, L[4]),
         h('p', { class: 'big', style: 'font-size:30px;margin-top:18px' }, L[5], spk(L[5])), h('div', { class: 'tr' }, `${L[6]} — ${L[7]}`)));
+    if (hasClip(L[1])) say(L[1]);
     passive();
   } else if (ex.t === 'trace') {
     const L = ALPHABET[ex.Li], c = traceCanvas(L);
@@ -488,13 +494,13 @@ function review() {
     !due && any ? h('p', {}, h('button', { class: 'btn', onclick: () => startReview(true) }, 'Practise anyway')) : null);
 }
 function alphaPlayer() {
-  const src = 'https://commons.wikimedia.org/wiki/Special:FilePath/Armenian_alphabet_(Western_Armenian).ogg';
+  const src = location.protocol === 'file:' ? 'https://commons.wikimedia.org/wiki/Special:FilePath/Armenian_alphabet_(Western_Armenian).ogg' : 'audio/alphabet.mp3';
   const a = h('audio', { controls: true, preload: 'none', src, style: 'width:100%;margin-top:10px' });
   const rate = (r, label) => h('button', { class: 'btn small', onclick: () => { a.playbackRate = r; a.play(); } }, label);
   return h('div', { class: 'card', style: 'margin:16px 0;padding:18px 22px' }, h('b', {}, 'Hear the alphabet'),
     h('div', { class: 'note' }, 'A native speaker reads the letters in alphabet order with Western pronunciation (43 seconds). Follow along from Ա to Ֆ.'), a,
     h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap' }, rate(1, 'Normal speed'), rate(0.6, 'Slow'),
-      h('span', { class: 'note' }, 'Recording by Vahagn Petrosyan, ', h('a', { href: 'https://commons.wikimedia.org/wiki/File:Armenian_alphabet_(Western_Armenian).ogg', target: '_blank', rel: 'noopener' }, 'Wikimedia Commons'), '. If it will not play here, open that link.')));
+      h('span', { class: 'note' }, 'Recording by Vahagn Petrosyan, ', h('a', { href: 'https://commons.wikimedia.org/wiki/File:Armenian_alphabet_(Western_Armenian).ogg', target: '_blank', rel: 'noopener' }, 'Wikimedia Commons'), '. Tap any letter above to hear it on its own.')));
 }
 function abc() {
   const app = $('#app'); app.innerHTML = '';
@@ -502,7 +508,8 @@ function abc() {
   const show = (i, btn) => {
     const L = ALPHABET[i]; app.querySelectorAll('.grid button').forEach(b => b.classList.remove('on')); btn.classList.add('on');
     detail.innerHTML = '';
-    detail.append(h('p', { class: 'big xl' }, glyph(L), spk(L[1])), h('p', { class: 'en' }, (L[2] ? `“${L[2]}” — ` : '') + `sounds like ${L[3]}`), h('p', { class: 'note' }, L[4]),
+    if (hasClip(L[1])) say(L[1]);
+    detail.append(h('p', { class: 'big xl' }, glyph(L), hasClip(L[1]) ? spk(L[1]) : null), h('p', { class: 'en' }, (L[2] ? `“${L[2]}” — ` : '') + `sounds like ${L[3]}`), h('p', { class: 'note' }, L[4]),
       h('p', { class: 'big', style: 'font-size:30px;margin-top:14px' }, L[5], spk(L[5])), h('div', { class: 'tr' }, `${L[6]} — ${L[7]}`));
   };
   const cell = (L, i) => { const b = h('button', { onclick: () => show(i, b) }, glyph(L), h('small', {}, L[3])); return b; };
