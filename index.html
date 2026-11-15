@@ -760,7 +760,7 @@ const keysOf = l => l.letters ? l.letters.map(i => 'L:' + i) : [...l.words, ...l
 const KEY = 'parev.v1';
 const def = () => ({ done: {}, srs: {}, streak: { last: '', n: 0 }, set: { tr: true, unlock: false, shim: true } });
 let S = (() => { try { const d = def(), s = JSON.parse(localStorage.getItem(KEY) || '{}'); return Object.assign(d, s, { set: Object.assign(d.set, s.set || {}) }); } catch (e) { return def(); } })();
-const save = () => { S.t = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+const save = () => { S.t = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); if (localStorage.getItem('parev.gh')) localStorage.setItem('parev.dirty', '1'); } catch (e) {} };
 const IV = [0, 1, 2, 4, 8, 16, 32, 64];
 function grade(k, ok) { const r = S.srs[k] || { b: 0, due: 0 }; r.b = ok ? Math.min(r.b + 1, 7) : 0; r.due = Date.now() + (ok ? IV[r.b] : 0) * 864e5; S.srs[k] = r; }
 const valid = k => k.startsWith('L:') ? !!ALPHABET[+k.slice(2)] : !!ITEMS[k];
@@ -784,21 +784,29 @@ async function ghPull() {
   const j = await r.json();
   return { sha: j.sha, data: JSON.parse(b64d(j.content)) };
 }
+// The private repository is the source of truth. This device only keeps a working copy, plus a
+// "dirty" mark when it holds progress that has not reached GitHub yet (for example after studying offline).
+const dirty = () => { try { return localStorage.getItem('parev.dirty') === '1'; } catch (e) { return false; } };
+const setDirty = on => { try { on ? localStorage.setItem('parev.dirty', '1') : localStorage.removeItem('parev.dirty'); } catch (e) {} };
+const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 async function ghSync() {
   if (!GH()) return;
   try {
     const cur = await ghPull();
-    if (cur && cur.data && cur.data.done && (cur.data.t || 0) > (S.t || 0)) {
-      const t = cur.data.t; S = Object.assign(def(), cur.data); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
-      S.t = t; ghMsg = 'Loaded newer progress from GitHub at ' + new Date().toLocaleTimeString();
-    } else if (!cur || (S.t || 0) > (cur.data.t || 0)) {
+    const remote = cur && cur.data && cur.data.done ? cur.data : null;
+    if (remote && !(dirty() && (S.t || 0) > (remote.t || 0))) {
+      S = Object.assign(def(), remote, { set: Object.assign(def().set, remote.set || {}) });
+      try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+      setDirty(false); ghMsg = 'Progress loaded from your GitHub repository at ' + clock();
+    } else {
+      if (!S.t) S.t = Date.now();
       const r = await ghApi('PUT', { message: 'Update Parev progress', content: b64e(JSON.stringify(S, null, 1)), sha: cur ? cur.sha : undefined });
       if (!r.ok) throw new Error(r.status === 404 ? 'GitHub cannot find "' + GH().repo + '" with this token. Check the name is exactly username/repository, and that the token\'s "Repository access" includes that repository.'
         : r.status === 403 ? 'the token can see the repository but may not write to it. Set its Contents permission to "Read and write".'
         : r.status === 401 ? 'GitHub rejected the token. It may be mistyped or expired.' : 'GitHub answered ' + r.status);
-      ghMsg = 'Saved to GitHub at ' + new Date().toLocaleTimeString();
-    } else ghMsg = 'Already up to date';
-  } catch (e) { ghMsg = 'Sync failed: ' + e.message; }
+      setDirty(false); ghMsg = 'Progress saved to your GitHub repository at ' + clock();
+    }
+  } catch (e) { ghMsg = 'Not synced: ' + e.message + (dirty() ? ' Your latest progress is kept on this device and will upload on the next successful sync.' : ''); }
 }
 
 // ---------- speech ----------
@@ -1157,6 +1165,7 @@ function home() {
   app.append(topBar('home'), h('div', { class: 'stats' },
     h('div', {}, h('b', {}, streak()), 'day streak'), h('div', {}, h('b', {}, `${nDone}/${LESSONS.length}`), 'lessons'),
     h('div', {}, h('b', {}, Object.keys(S.srs).filter(valid).length), 'items learned'), h('div', {}, h('b', {}, dueKeys().length), 'due for review')));
+  if (GH()) app.append(h('p', { class: 'note', style: 'margin:0' }, ghMsg || 'Connected to your GitHub repository.'));
   let firstOpen = true;
   UNITS.forEach((u, ui) => {
     const cards = u.lessons.map(l => {
@@ -1285,11 +1294,11 @@ function ghRow() {
   const msg = h('small', {}, ghMsg || (g.repo ? 'Connected to ' + g.repo : 'Not connected'));
   const go = async () => {
     if (repo.value.trim() && tok.value.trim()) { repo.value = repo.value.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/^\/+|\/+$/g, ''); localStorage.setItem('parev.gh', JSON.stringify({ repo: repo.value, token: tok.value.trim() })); }
-    else { localStorage.removeItem('parev.gh'); msg.textContent = 'Not connected'; return; }
-    msg.textContent = 'Syncing…'; await ghSync(); msg.textContent = ghMsg;
+    else { localStorage.removeItem('parev.gh'); setDirty(false); msg.textContent = 'Not connected'; return; }
+    setDirty(false); msg.textContent = 'Syncing…'; await ghSync(); msg.textContent = ghMsg;
   };
   return h('div', { class: 'row' }, h('div', {}, h('b', {}, 'Sync progress to GitHub'),
-    h('small', {}, 'Saves progress.json to a private repository of yours after every lesson and loads it on other devices. Needs a fine-grained access token with read and write access to Contents on that one repository. The token is kept only in this browser.'),
+    h('small', {}, 'Your private repository becomes the home of your progress: the app loads progress.json from it every time it opens and saves to it after every lesson. When you first connect, progress already in the repository replaces what is on this device. Needs a fine-grained access token with read and write access to Contents on that one repository. The token is kept only in this browser.'),
     h('div', { style: 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap' }, repo, tok), msg),
     h('button', { class: 'btn small', onclick: go }, 'Save & sync'));
 }
@@ -1298,9 +1307,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter') { const g = $('#go'); if (g && !g.disabled) { e.preventDefault(); g.click(); } }
   else if (!typing && /^[1-4]$/.test(e.key)) { const o = document.querySelectorAll('.opt')[+e.key - 1]; if (o) o.click(); }
 });
-home();
 audioInit();
-if (GH()) ghSync().then(() => { if (!sess && /Loaded/.test(ghMsg)) home(); });
+if (GH()) {
+  $('#app').append(h('div', { class: 'center' }, h('p', { class: 'big' }, 'Բարեւ'), h('p', { class: 'note' }, 'Loading your progress from GitHub…')));
+  Promise.race([ghSync(), new Promise(r => setTimeout(r, 8000))]).then(() => { if (!ghMsg) ghMsg = 'GitHub is slow to answer; showing the copy on this device for now.'; if (!sess) home(); });
+} else home();
 </script>
 </body>
 </html>

@@ -14,13 +14,13 @@ A small, self-contained course for reading, writing and speaking Western Armenia
 
 ## Progress
 
-Progress is saved in your browser. To keep it on GitHub and share it between devices:
+Without setup, progress is saved in your browser. To keep it on GitHub instead and share it between devices:
 
 1. Create a separate **private** repository for it. Do not use a public one: your progress file and commit email would be visible.
 2. Create a fine-grained personal access token limited to that repository with **Contents: read and write**.
 3. In the app, open *Settings → Sync progress to GitHub*, enter `username/repository` and the token.
 
-The app then writes `progress.json` to that repository after every lesson and loads it on other devices. The token is stored only in the browser you typed it into. You can also export and import a progress file by hand from Settings.
+From then on the repository is the home of your progress: the app loads `progress.json` from it every time it opens and saves to it after every lesson. The browser keeps only a working copy, used when you are offline and uploaded at the next sync. The token is stored only in the browser you typed it into. You can also export and import a progress file by hand from Settings.
 
 ## Audio
 
