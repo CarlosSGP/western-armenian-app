@@ -94,13 +94,34 @@ function toEastern(s) {
   const m = { բ: 'փ', պ: 'բ', գ: 'ք', կ: 'գ', դ: 'թ', տ: 'դ', ձ: 'ց', ծ: 'ձ', ջ: 'չ', ճ: 'ջ' };
   return s.replace(/[բպգկդտձծջճ]/g, c => m[c]);
 }
-function say(hy) {
+function tts(hy) {
   if (!VOICE) return;
   const u = new SpeechSynthesisUtterance(S.set.shim ? toEastern(hy) : hy);
   u.voice = VOICE; u.lang = VOICE.lang; u.rate = 0.8;
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
-const spk = hy => VOICE ? h('button', { class: 'spk', title: 'Listen', onclick: e => { e.stopPropagation(); say(hy); } }, '🔊') : null;
+const spk = hy => hy && canHear(hy) ? h('button', { class: 'spk', title: 'Listen', onclick: e => { e.stopPropagation(); say(hy); } }, '🔊') : null;
+// ---------- recorded audio ----------
+// Clips come from two places: recordings made in this browser (IndexedDB) and files published in audio/ next to the page.
+const clipId = hy => { let x = 2166136261; for (const c of norm(hy)) { x ^= c.codePointAt(0); x = Math.imul(x, 16777619) >>> 0; } return x.toString(16).padStart(8, '0'); };
+let MANIFEST = {}, idb = null;
+const LOCAL = new Set();
+const idbReq = (mode, fn) => new Promise(res => { if (!idb) return res(null); try { const t = idb.transaction('clips', mode), q = fn(t.objectStore('clips')); t.oncomplete = () => res(q ? q.result : null); t.onerror = t.onabort = () => res(null); } catch (e) { res(null); } });
+async function audioInit() {
+  await new Promise(res => { try { const r = indexedDB.open('parev-audio', 1); r.onupgradeneeded = () => r.result.createObjectStore('clips'); r.onsuccess = () => { idb = r.result; res(); }; r.onerror = () => res(); } catch (e) { res(); } });
+  ((await idbReq('readonly', st => st.getAllKeys())) || []).forEach(k => LOCAL.add(k));
+  if (location.protocol !== 'file:') { try { const r = await fetch('audio/manifest.json', { cache: 'no-cache' }); if (r.ok) MANIFEST = await r.json(); } catch (e) {} }
+}
+const hasClip = hy => { const id = clipId(hy); return LOCAL.has(id) || !!MANIFEST[id]; };
+const canHear = hy => hasClip(hy) || !!VOICE;
+async function say(hy) {
+  const id = clipId(hy);
+  try {
+    if (LOCAL.has(id)) { const b = await idbReq('readonly', st => st.get(id)); if (b) { await new Audio(URL.createObjectURL(b)).play(); return; } }
+    if (MANIFEST[id]) { await new Audio('audio/' + MANIFEST[id]).play(); return; }
+  } catch (e) {}
+  tts(hy);
+}
 const trEl = (tr, always) => (always || S.set.tr) && tr ? h('div', { class: 'tr' }, tr) : null;
 
 // ---------- exercise builders ----------
@@ -118,6 +139,10 @@ function mcW(item, dir) {
   return dir === 'he'
     ? { t: 'mc', key: item.hy, item, q: 'What does this mean?', big: item.hy, bigTr: item.tr, opts: opts.map(o => ({ label: o.en })), ans: opts.indexOf(item) }
     : { t: 'mc', key: item.hy, item, q: 'How do you say this?', text: item.en, opts: opts.map(o => ({ label: o.hy, sub: o.tr, hy: true })), ans: opts.indexOf(item) };
+}
+function mcListen(item) {
+  const opts = shuffle([item, ...distract(item, w => w.en)]);
+  return { t: 'mc', key: item.hy, item, q: 'Listen. What does it mean?', hear: item.hy, opts: opts.map(o => ({ label: o.en })), ans: opts.indexOf(item) };
 }
 function build(item, dir) {
   let tok = dir === 'he' ? tokEn(item.en) : tokHy(item.hy);
@@ -177,6 +202,9 @@ function buildLesson(l) {
     }
     shuffle(W.slice()).slice(0, 3).forEach(w => q.push(mcW(w, 'eh')));
     const tw = shuffle(W.slice())[0]; q.push({ t: 'type', key: tw.hy, item: tw });
+    const hw = shuffle(W.filter(w => canHear(w.hy)));
+    hw.slice(0, 3).forEach(w => q.push(mcListen(w)));
+    if (hw[3]) q.push({ t: 'type', key: hw[3].hy, item: hw[3], hear: true });
     X.forEach(s => q.push(build(s, 'he')));
     const sh = shuffle(X.slice());
     sh.slice(0, 3).forEach(s => q.push(build(s, 'eh')));
@@ -188,6 +216,7 @@ function buildLesson(l) {
 function revEx(k) {
   if (k.startsWith('L:')) return mcL(+k.slice(2), Math.random() < .5 ? 'ls' : 'sl');
   const it = ITEMS[k], r = Math.random();
+  if (canHear(k) && Math.random() < .25) return it.kind === 'w' && Math.random() < .5 ? { t: 'type', key: k, item: it, hear: true } : mcListen(it);
   if (it.kind === 'w') return r < .35 ? mcW(it, 'he') : r < .65 ? mcW(it, 'eh') : r < .9 ? { t: 'type', key: k, item: it } : { t: 'speak', key: k, item: it };
   return r < .4 ? build(it, 'he') : r < .85 ? build(it, 'eh') : { t: 'speak', key: k, item: it };
 }
@@ -293,6 +322,7 @@ function renderEx() {
     body.append(h('p', { class: 'q' }, ex.q));
     if (ex.big) body.append(h('p', { class: 'big' }, ex.big, spk(ex.speak || (ex.item && ex.item.hy))), trEl(ex.bigTr));
     if (ex.text) body.append(h('p', { class: 'text' }, ex.text));
+    if (ex.hear) { body.append(h('button', { class: 'btn', onclick: () => say(ex.hear) }, '🔊 Play again')); say(ex.hear); }
     const els = ex.opts.map((o, i) => h('button', { class: 'opt' + (o.hy ? ' hy' : ''), onclick: () => { if (answered) return; sel = i; els.forEach((e, j) => e.classList.toggle('sel', j === i)); go.disabled = false; } },
       h('span', { class: 'num' }, i + 1), h('b', {}, o.label), o.sub && (o.hy ? S.set.tr : true) ? h('small', {}, o.sub) : null));
     body.append(h('div', { class: 'opts' }, els));
@@ -335,7 +365,8 @@ function renderEx() {
     const keys = ALPHABET.slice(0, 38).map(L => h('button', { onclick: () => press(L[1]) }, L[1]));
     keys.push(h('button', { onclick: () => press('՚') }, '՚'), h('button', { onclick: () => press('՞') }, '՞'),
       h('button', { class: 'wide', onclick: () => press(' ') }, 'space'), h('button', { class: 'wide', onclick: () => press('⌫') }, '⌫ delete'));
-    body.append(h('p', { class: 'q' }, 'Type this in Armenian'), h('p', { class: 'text' }, it.en), trEl('sounds like: ' + it.tr), inp, h('div', { class: 'kb' }, keys));
+    if (ex.hear) { body.append(h('p', { class: 'q' }, 'Type what you hear'), h('button', { class: 'btn', onclick: () => say(it.hy) }, '🔊 Play again'), inp, h('div', { class: 'kb' }, keys)); say(it.hy); }
+    else body.append(h('p', { class: 'q' }, 'Type this in Armenian'), h('p', { class: 'text' }, it.en), trEl('sounds like: ' + it.tr), inp, h('div', { class: 'kb' }, keys));
     go.disabled = true;
     go.onclick = () => { inp.disabled = true; done(norm(inp.value) === norm(it.hy)); };
     setTimeout(() => inp.focus(), 0);
@@ -434,6 +465,7 @@ function abc() {
   app.append(topBar('abc'), h('h1', {}, 'The alphabet'),
     h('div', { class: 'grid' }, ALPHABET.slice(0, 38).map(cell)), h('h3', {}, 'Letter pairs'),
     h('div', { class: 'grid' }, ALPHABET.slice(38).map((L, i) => cell(L, i + 38))), detail,
+    h('p', { class: 'note' }, 'To hear every letter said by a native speaker, play ', h('a', { href: 'https://commons.wikimedia.org/wiki/File:Armenian_alphabet_(Western_Armenian).ogg', target: '_blank', rel: 'noopener' }, 'this 43-second recording on Wikimedia Commons'), ' (Western pronunciation, in alphabet order).'),
     h('h3', {}, 'Western versus Eastern sounds'),
     h('div', { class: 'tip', html: `<p>If you compare with Eastern Armenian material, these letters will look "swapped". In Western Armenian:</p><table><tr><td>բ = p</td><td>պ = b</td><td>փ = p</td></tr><tr><td>գ = k</td><td>կ = g</td><td>ք = k</td></tr><tr><td>դ = t</td><td>տ = d</td><td>թ = t</td></tr><tr><td>ձ = ts</td><td>ծ = dz</td><td>ց = ts</td></tr><tr><td>ջ = ch</td><td>ճ = j</td><td>չ = ch</td></tr></table><p>Western Armenian also keeps the traditional spelling (<span class="hy">իւ, եա, ոյ, աւ</span>, silent final <span class="hy">յ</span>), which Armenia replaced in the 1920s.</p>` }));
 }
@@ -450,10 +482,13 @@ function settings() {
   app.append(topBar('set'), h('h1', {}, 'Settings'),
     toggle('tr', 'Show romanisation', 'Latin-letter pronunciation under Armenian text. Turn it off once the alphabet feels comfortable.'),
     toggle('unlock', 'Unlock every lesson', 'Skip ahead instead of going in order.'),
-    h('div', { class: 'row' }, h('div', {}, h('b', {}, 'Audio'), h('small', {}, VOICE
-      ? `Using the voice “${VOICE.name}”. Computer Armenian voices are Eastern Armenian; the option below respells text so it comes out close to Western.`
-      : 'No Armenian voice was found in this browser, so the 🔊 buttons are hidden. Microsoft Edge usually offers Armenian voices; open this file there to get audio.')),
-      VOICE ? h('button', { class: 'btn small', onclick: () => say('Բարեւ, ինչպէ՞ս ես։') }, 'Test') : null),
+    h('div', { class: 'row' }, h('div', {}, h('b', {}, 'Audio'), h('small', {}, (() => {
+      const all = studioItems(), n = all.filter(x => hasClip(x.hy)).length;
+      return `${n} of ${all.length} words and sentences have a recorded clip. ` + (VOICE
+        ? `Everything else is read by the computer voice “${VOICE.name}”, which is Eastern Armenian; the option below nudges it toward Western sounds.`
+        : 'Everything else is silent, because this browser has no Armenian voice.') + ' Items with sound also get listening exercises.';
+    })())), h('span', { style: 'display:flex;gap:8px' }, VOICE ? h('button', { class: 'btn small', onclick: () => tts('Բարեւ, ինչպէ՞ս ես։') }, 'Test voice') : null,
+      h('button', { class: 'btn small', onclick: () => { stIdx = Math.max(0, studioItems().findIndex(x => !LOCAL.has(x.id))); studio(); } }, 'Recording studio'))),
     VOICE ? toggle('shim', 'Western pronunciation correction', 'Approximate. It fixes the consonants (բ = p, կ = g …) but the accent stays Eastern.') : null,
     h('div', { class: 'row' }, h('div', {}, h('b', {}, 'Back up progress'), h('small', {}, 'Progress is stored in this browser only. Export it to move browsers or keep a copy.')),
       h('span', { style: 'display:flex;gap:8px' }, h('button', { class: 'btn small', onclick: () => { const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(S)], { type: 'application/json' })), download: 'parev-progress.json' }); document.body.append(a); a.click(); a.remove(); } }, 'Export'),
@@ -466,6 +501,57 @@ function settings() {
       h('button', { class: 'btn small', onclick: () => { if (confirm('Erase all progress?')) { S = def(); save(); settings(); } } }, 'Reset')));
 }
 
+// ---------- recording studio ----------
+function studioItems() {
+  const seen = new Set(), out = [];
+  const add = (hy, tr, en) => { const id = clipId(hy); if (seen.has(id)) return; seen.add(id); out.push({ id, hy, tr, en }); };
+  ALPHABET.forEach(L => { add(L[1], L[3], L[2] ? `the sound of the letter “${L[2]}” (not its name)` : 'the sound of this letter pair'); add(L[5], L[6], L[7]); });
+  LESSONS.forEach(l => [...(l.words || []), ...(l.sentences || [])].forEach(x => add(x.hy, x.tr, x.en)));
+  return out;
+}
+let stIdx = 0;
+const blobB64 = b => new Promise(res => { const f = new FileReader(); f.onload = () => res(String(f.result).split(',')[1]); f.readAsDataURL(b); });
+function studio() {
+  const app = $('#app'); app.innerHTML = '';
+  const items = studioItems(); stIdx = Math.max(0, Math.min(stIdx, items.length - 1));
+  const it = items[stIdx], mine = LOCAL.has(it.id), nDone = items.filter(x => LOCAL.has(x.id)).length;
+  const status = h('p', { class: 'note' }, mine ? 'Recorded in this browser.' : MANIFEST[it.id] ? 'A published clip exists. Recording here replaces it in this browser.' : 'Not recorded yet.');
+  const go = d => { stIdx += d; studio(); };
+  let r = null, ch = [];
+  const recB = h('button', { class: 'btn primary', id: 'go', onclick: async () => {
+    if (r && r.state === 'recording') { r.stop(); return; }
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({ audio: true });
+      r = new MediaRecorder(st); ch = [];
+      r.ondataavailable = e => ch.push(e.data);
+      r.onstop = async () => { st.getTracks().forEach(t => t.stop()); await idbReq('readwrite', o => o.put(new Blob(ch, { type: r.mimeType || 'audio/webm' }), it.id)); LOCAL.add(it.id); studio(); say(it.hy); };
+      r.start(); recB.textContent = '■ Stop';
+    } catch (e) { status.textContent = 'Microphone unavailable. Use the hosted page (not a downloaded file) and allow microphone access.'; }
+  } }, mine ? '● Record again' : '● Record');
+  const file = h('input', { type: 'file', accept: '.json', style: 'display:none', onchange: async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const d = JSON.parse(await f.text()); for (const id in d) { const bin = atob(d[id].data), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); await idbReq('readwrite', o => o.put(new Blob([u], { type: d[id].mime }), id)); LOCAL.add(id); } } catch (err) {}
+    studio();
+  } });
+  const exportAll = async () => {
+    const out = {};
+    for (const x of items) { if (!LOCAL.has(x.id)) continue; const b = await idbReq('readonly', o => o.get(x.id)); if (b) out[x.id] = { hy: x.hy, mime: b.type, data: await blobB64(b) }; }
+    const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(out)], { type: 'application/json' })), download: 'parev-recordings.json' }); document.body.append(a); a.click(); a.remove();
+  };
+  app.append(topBar('set'), h('h1', {}, 'Recording studio'),
+    h('p', {}, 'For a Western Armenian speaker to give the course a voice. Read each item once, clearly, at a natural pace. Recordings are stored in this browser and play everywhere in the course straight away.'),
+    h('p', { class: 'note' }, `${nDone} of ${items.length} recorded · item ${stIdx + 1}`),
+    h('div', { class: 'card' }, h('p', { class: 'big' }, it.hy, hasClip(it.hy) ? spk(it.hy) : null), h('div', { class: 'tr' }, it.tr), h('p', { class: 'en' }, it.en), status),
+    h('p', { style: 'display:flex;gap:10px;flex-wrap:wrap;margin-top:16px' }, recB,
+      h('button', { class: 'btn', disabled: stIdx === 0, onclick: () => go(-1) }, '← Back'),
+      h('button', { class: 'btn', disabled: stIdx >= items.length - 1, onclick: () => go(1) }, 'Next →'),
+      h('button', { class: 'btn', onclick: () => { const n = items.findIndex((x, i) => i > stIdx && !LOCAL.has(x.id)); if (n >= 0) { stIdx = n; studio(); } } }, 'Next unrecorded'),
+      mine ? h('button', { class: 'btn', onclick: async () => { await idbReq('readwrite', o => o.delete(it.id)); LOCAL.delete(it.id); studio(); } }, 'Delete') : null),
+    h('h3', {}, 'Moving recordings'),
+    h('p', { class: 'note' }, 'Export saves every recording made in this browser as one file. Import loads such a file into another browser. To publish the clips for everyone who uses the course, the file is unpacked into the audio folder of the repository (see the README); only do that with the speaker\'s consent, since their voice becomes public.'),
+    h('p', { style: 'display:flex;gap:10px' }, h('button', { class: 'btn small', disabled: !nDone, onclick: exportAll }, 'Export recordings'), h('button', { class: 'btn small', onclick: () => file.click() }, 'Import recordings'), file,
+      h('button', { class: 'btn small', onclick: settings }, 'Back to settings')));
+}
 function ghRow() {
   const g = GH() || {};
   const repo = h('input', { class: 'gh', placeholder: 'username/repository', value: g.repo || '' });
@@ -487,4 +573,5 @@ document.addEventListener('keydown', e => {
   else if (!typing && /^[1-4]$/.test(e.key)) { const o = document.querySelectorAll('.opt')[+e.key - 1]; if (o) o.click(); }
 });
 home();
+audioInit();
 if (GH()) ghSync().then(() => { if (!sess && /Loaded/.test(ghMsg)) home(); });

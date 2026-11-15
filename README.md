@@ -24,7 +24,11 @@ The app then writes `progress.json` to that repository after every lesson and lo
 
 ## Audio
 
-Browsers have no Western Armenian voice. If your browser offers an Armenian (Eastern) voice, the app respells text so the consonants come out close to Western, but the accent stays Eastern. Without one, the listen buttons are hidden.
+Browsers have no Western Armenian voice, so the course gets its sound from recordings:
+
+- **Recording studio** (*Settings → Audio → Recording studio*): a Western Armenian speaker reads each word and sentence once. Clips are stored in that browser and play throughout the course immediately. Items that have sound also get listening exercises.
+- **Sharing clips with everyone:** in the studio, choose *Export recordings*, then run `node tools/import-audio.js parev-recordings.json` and commit the `audio/` folder it creates. Publish a person's voice only with their consent.
+- **Fallback:** if your browser offers an Armenian (Eastern) voice, the app respells text so the consonants come out close to Western, but the accent stays Eastern. With no clip and no voice, an item is silent.
 
 ## Accuracy
 
